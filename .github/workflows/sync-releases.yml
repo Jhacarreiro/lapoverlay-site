@@ -1,0 +1,43 @@
+name: Sync app releases
+
+# Adds each new app release to /changelog/ and points the Windows download
+# buttons at its installer. The releases repo is public, so no secret is needed.
+on:
+  schedule:
+    - cron: "17,47 * * * *"
+  workflow_dispatch:
+  repository_dispatch:
+    types: [app-release]
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: sync-releases
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update changelog and download links
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/sync_releases.py
+      - name: Commit and publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git add changelog/index.html index.html
+          if git diff --cached --quiet; then
+            echo "Site already up to date"
+            exit 0
+          fi
+          git config user.name "João Carreiro"
+          git config user.email "19389037+Jhacarreiro@users.noreply.github.com"
+          git commit -q -m "Sync changelog and downloads with app releases"
+          git push -q origin HEAD:main
+          # A push made with GITHUB_TOKEN may not start a Pages build on its own.
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/pages/builds" >/dev/null || echo "Pages build request failed; the push may still deploy"
