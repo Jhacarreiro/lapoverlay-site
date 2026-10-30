@@ -79,13 +79,20 @@ def main():
         return
 
     page = CHANGELOG.read_text(encoding="utf-8")
-    first = re.search(r'^    <h2 id="v', page, re.M)
-    if not first:
+    if not re.search(r'^    <h2 id="v', page, re.M):
         sys.exit("changelog has no version heading to insert above")
     new = [r for r in releases if f'id="v{r["tag_name"].lstrip("v")}"' not in page and items(r.get("body"))]
+    for release in new:
+        # Above the first older version, so a release that gets its notes late still lands in order.
+        key = version_key(release["tag_name"])
+        spot = next(
+            (m.start() for m in re.finditer(r'^    <h2 id="(v[^"]+)"', page, re.M) if version_key(m.group(1)) < key),
+            None,
+        )
+        if spot is None:
+            spot = page.index("  </main>")
+        page = page[:spot] + entry(release) + page[spot:]
     if new:
-        block = "".join(entry(r) for r in reversed(new))
-        page = page[: first.start()] + block + page[first.start():]
         CHANGELOG.write_text(page, encoding="utf-8")
         print("changelog: added " + ", ".join(r["tag_name"] for r in new))
 
